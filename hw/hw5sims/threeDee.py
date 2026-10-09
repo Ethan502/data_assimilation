@@ -1,11 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+import time
 
 from models import lorenz63, lorenz96, lorenz96two, generate_B
+from plotter import plot_results
 
-MODEL = 'lorenz63'
+MODEL = 'lorenz96'
 H_SPARSITY = 'full'
+SIGMA_PERCENTAGE = 0.10
 
 K = 40
 J = 5
@@ -22,21 +25,12 @@ num_steps = len(times)
 
 # Define the measurement covariance matrix
 
-def model_rhs(model_name, t, state):
-    if model_name == 'lorenz63':
-        return lorenz63(t, state)
-    elif model_name == 'lorenz96':
-        return lorenz96(t, state, K, F, d)
-    elif model_name == 'lorenz96two':
-        return lorenz96two(
-            t, state, K, F, d, gamma_j, ds, J)
-    else:
-        raise ValueError("Not a valid model name")
 
 def threeDeeVar(H,R,B,y,mew):
+    B = B + 1e-6 * np.eye(B.shape[0])
     first = H.T @ np.linalg.inv(R) @ H + np.linalg.inv(B)
     second = H.T @ np.linalg.inv(R) @ y + np.linalg.inv(B) @ mew
-    return np.linalg.inv(first) @ second
+    return np.linalg.solve(first, second)
 
 def get_initial_state(model_name):
     if model_name == 'lorenz63':
@@ -78,8 +72,7 @@ def propagate(model_name, t0, t1, state):
 
     return sol.y[:, -1]
 
-def make_R(H,sigma):
-    mean_magnitude = np.mean(np.abs(mean_state))
+def make_R(H,mean_magnitude,noise_fraction):
     sigma = noise_fraction * mean_magnitude
 
     # Number of observed quantities
@@ -99,9 +92,11 @@ def make_H(model_name, option="full"):
     if option == "full":
         return np.eye(n)
 
-    elif option == "first":
-        H = np.zeros((1, n))
-        H[0, 0] = 1
+    elif option == "alternate":
+        observed_indices = np.arange(0, n, 2)
+        H = np.zeros((len(observed_indices), n))
+        for row, state_index in enumerate(observed_indices):
+            H[row, state_index] = 1.0
         return H
 
     else:
@@ -112,9 +107,9 @@ def main():
     real_state = get_initial_state(MODEL)
     estimated_state = real_state.copy()
 
-    B = generate_B(MODEL)
+    B, mean_magnitude = generate_B(MODEL)
     H = make_H(MODEL,H_SPARSITY)
-    R = make_R(H,SIGMA)
+    R = make_R(H,mean_magnitude,SIGMA_PERCENTAGE)
 
     print("Model:", MODEL)
     print("State dimension:", len(real_state))
@@ -126,6 +121,10 @@ def main():
     # Save results over time
     real_hist = np.zeros((num_steps, state_dim))
     estimated_hist = np.zeros((num_steps, state_dim))
+    real_hist[0] = real_state
+    estimated_hist[0] = estimated_state
+
+    threeDVar_time = 0.0
 
     for k in range(1,num_steps):
         t_prev = times[k-1]
@@ -133,17 +132,22 @@ def main():
 
         # Propagate the true state to current time
         real_state = propagate(MODEL,t_prev,t_now,real_state)
-        mew = propagate(MODEL,t_prev,t_now,real_state)
+        mew = propagate(MODEL,t_prev,t_now,estimated_state)
+        
+        noise = np.random.multivariate_normal(mean=np.zeros(H.shape[0]),cov=R)
+        y = H @ real_state + noise
+        start = time.perf_counter()
+        estimated_state = threeDeeVar(H,R,B,y,mew)
+        end = time.perf_counter()
 
+        threeDVar_time += end - start
 
-
-
-
-    
-
-
-    return
-
+        real_hist[k] = real_state
+        estimated_hist[k] = estimated_state
+        
+    rsme = plot_results(MODEL,times,real_hist,estimated_hist,K,J)
+    print(f"Total 3DVAR computation time: {threeDVar_time:.6f} seconds")
+    print(f"Average time per assimilation step: {threeDVar_time / (num_steps - 1):.6e} seconds")
 
 if __name__ == "__main__":
     main()

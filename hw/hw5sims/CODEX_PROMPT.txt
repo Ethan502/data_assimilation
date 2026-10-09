@@ -1,0 +1,19 @@
+Please read CODEX_CONTEXT.md and FOURDVAR_IMPLEMENTATION_PLAN.md first, then inspect fourdvar_template.py.
+
+I want to extend my existing 3DVAR homework code to one-interval 4DVAR without rewriting the project.
+
+Constraints:
+- Preserve my current model-switching structure.
+- Use solve_ivp for forward and adjoint integration.
+- Use the exact cost and gradient in the context file.
+- Prefer np.linalg.solve over explicit inverse calls.
+- Start with Lorenz-63 only.
+- Validate the Lorenz-63 gradient with a directional derivative or centered finite-difference test before extending to Lorenz-96.
+- Be careful with indexing: the optimization variable is x_k and the observation is at t_{k+1}.
+- Keep H, R, B, truth trajectory, and observations identical when comparing 3DVAR and 4DVAR.
+- Show minimal code changes rather than rewriting everything.
+
+First task:
+1. Implement the Lorenz-63 Jacobian in jacobian_rhs().
+2. Add a gradient-check helper.
+3. Show where fourdvar_analysis() should be called inside my existing time loop.

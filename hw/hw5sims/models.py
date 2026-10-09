@@ -2,8 +2,12 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 def lorenz63(t, state):
-    x, y, z = state
 
+    sigma = 10
+    rho = 28
+    beta = float(8/3)
+
+    x, y, z = state
     dxdt = sigma * (y - x)
     dydt = x * (rho - z) - y
     dzdt = x * y - beta * z
@@ -67,22 +71,12 @@ def lorenz96two(t, entries, K=40, F=8.0, d=1.0,
     return np.concatenate((du, dv.flatten()))
 
 def generate_B(model_name, dt=0.1, t_final=1000.0, t_transient=100.0):
-    """
-    Generate a sample covariance matrix B for one of:
-        'lorenz63'
-        'lorenz96'
-        'lorenz96two'
-    """
 
     model_name = model_name.lower()
 
-    # -------------------------
-    # Select model + parameters
-    # -------------------------
     if model_name == "lorenz63":
         model = lorenz63
         x0 = np.array([1.0, 1.0, 1.0])
-
         model_args = ()
 
     elif model_name == "lorenz96":
@@ -92,7 +86,6 @@ def generate_B(model_name, dt=0.1, t_final=1000.0, t_transient=100.0):
 
         model = lorenz96
 
-        # Typical Lorenz-96 initial condition
         x0 = F * np.ones(K)
         x0[0] += 0.01
 
@@ -108,11 +101,9 @@ def generate_B(model_name, dt=0.1, t_final=1000.0, t_transient=100.0):
 
         model = lorenz96two
 
-        # Slow variables
         u0 = F * np.ones(K)
         u0[0] += 0.01
 
-        # Fast variables
         v0 = np.zeros((K, J))
 
         x0 = np.concatenate((u0, v0.flatten()))
@@ -124,11 +115,10 @@ def generate_B(model_name, dt=0.1, t_final=1000.0, t_transient=100.0):
             "model_name must be 'lorenz63', 'lorenz96', or 'lorenz96two'"
         )
 
-    # -------------------------
-    # Simulate model
-    # -------------------------
+    # Time points
     t_eval = np.arange(0, t_final + dt, dt)
 
+    # Long model simulation
     sol = solve_ivp(
         model,
         [0, t_final],
@@ -141,20 +131,18 @@ def generate_B(model_name, dt=0.1, t_final=1000.0, t_transient=100.0):
 
     trajectory = sol.y.T
 
-    # -------------------------
     # Remove transient
-    # -------------------------
     mask = sol.t >= t_transient
     trajectory_cov = trajectory[mask]
 
-    # -------------------------
-    # Compute sample mean
-    # -------------------------
+    # Mean state vector
     mean_state = np.mean(trajectory_cov, axis=0)
 
-    # -------------------------
-    # Compute B manually
-    # -------------------------
+    # Mean solution magnitude
+    magnitudes = np.linalg.norm(trajectory_cov, axis=1)
+    mean_magnitude = np.mean(magnitudes)
+
+    # Sample covariance
     N = trajectory_cov.shape[0]
     n_state = trajectory_cov.shape[1]
 
@@ -166,4 +154,4 @@ def generate_B(model_name, dt=0.1, t_final=1000.0, t_transient=100.0):
 
     B = B / (N - 1)
 
-    return B
+    return B, mean_magnitude
